@@ -1,16 +1,20 @@
 /*
  * Copyright 2017-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license.
  */
-
+@file:Suppress("JAVA_MODULE_DOES_NOT_READ_UNNAMED_MODULE")
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
 import kotlinx.serialization.*
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.encoding.CompositeDecoder.Companion.DECODE_DONE
+import kotlinx.serialization.hocon.internal.SuppressAnimalSniffer
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
+import kotlin.time.Duration
+import kotlin.time.toKotlinDuration
 
 /**
  * Allows [deserialization][decodeFromConfig]
@@ -29,6 +33,7 @@ public sealed class Hocon(
     internal val useConfigNamingConvention: Boolean,
     internal val useArrayPolymorphism: Boolean,
     internal val classDiscriminator: String,
+    internal val useTypesafeDurationParser: Boolean,
     override val serializersModule: SerializersModule,
 ) : SerialFormat {
 
@@ -62,7 +67,7 @@ public sealed class Hocon(
      * The default instance of Hocon parser.
      */
     @ExperimentalSerializationApi
-    public companion object Default : Hocon(false, false, false, "type", EmptySerializersModule())
+    public companion object Default : Hocon(false, false, false, "type", false, EmptySerializersModule())
 
     private abstract inner class ConfigConverter<T> : TaggedDecoder<T>() {
         override val serializersModule: SerializersModule
@@ -138,19 +143,22 @@ public sealed class Hocon(
         }
 
         override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
-            if (deserializer !is AbstractPolymorphicSerializer<*> || useArrayPolymorphism) {
-                return deserializer.deserialize(this)
+            val actualDeserializer = when {
+                deserializer !is AbstractPolymorphicSerializer<*> || useArrayPolymorphism -> deserializer
+                else -> {
+                    val config = if (currentTagOrNull != null) conf.getConfig(currentTag) else conf
+                    val reader = ConfigReader(config)
+                    val type = reader.decodeTaggedString(classDiscriminator)
+                    val actualSerializer = deserializer.findPolymorphicSerializerOrNull(reader, type)
+                        ?: throw SerializerNotFoundException(type)
+                    @Suppress("UNCHECKED_CAST")
+                    (actualSerializer as DeserializationStrategy<T>)
+                }
             }
-
-            val config = if (currentTagOrNull != null) conf.getConfig(currentTag) else conf
-
-            val reader = ConfigReader(config)
-            val type = reader.decodeTaggedString(classDiscriminator)
-            val actualSerializer = deserializer.findPolymorphicSerializerOrNull(reader, type)
-                ?: throw SerializerNotFoundException(type)
-
-            @Suppress("UNCHECKED_CAST")
-            return (actualSerializer as DeserializationStrategy<T>).deserialize(reader)
+            return if (useTypesafeDurationParser && actualDeserializer == Duration.serializer()) {
+                @Suppress("UNCHECKED_CAST")
+                getDuration(conf, currentTag) as T
+            } else actualDeserializer.deserialize(this)
         }
 
         override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
@@ -245,6 +253,13 @@ public sealed class Hocon(
     }
 }
 
+@SuppressAnimalSniffer
+private fun getDuration(conf: Config, path: String): Duration = try {
+    conf.getDuration(path).toKotlinDuration()
+} catch (e: ConfigException) {
+    throw SerializationException(e)
+}
+
 /**
  * Decodes the given [config] into a value of type [T] using a deserializer retrieved
  * from the reified type parameter.
@@ -303,6 +318,12 @@ public class HoconBuilder internal constructor(hocon: Hocon) {
      * "type" by default.
      */
     public var classDiscriminator: String = hocon.classDiscriminator
+
+    /**
+     * Switches parsing of [Duration] fields to the [Config.getDuration] method instead of [Duration.Companion.serializer]
+     * `false` by default.
+     */
+    public var useTypesafeDurationParser: Boolean = hocon.useTypesafeDurationParser
 }
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -311,5 +332,6 @@ private class HoconImpl(hoconBuilder: HoconBuilder) : Hocon(
     useConfigNamingConvention = hoconBuilder.useConfigNamingConvention,
     useArrayPolymorphism = hoconBuilder.useArrayPolymorphism,
     classDiscriminator = hoconBuilder.classDiscriminator,
+    useTypesafeDurationParser = hoconBuilder.useTypesafeDurationParser,
     serializersModule = hoconBuilder.serializersModule
 )

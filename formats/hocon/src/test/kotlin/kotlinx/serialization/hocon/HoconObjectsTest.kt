@@ -12,11 +12,15 @@ import org.junit.Assert.*
 internal inline fun <reified T> deserializeConfig(
     configString: String,
     deserializer: DeserializationStrategy<T>,
-    useNamingConvention: Boolean = false
+    useNamingConvention: Boolean = false,
+    useDurationParser: Boolean = false
 ): T {
     val ucnc = useNamingConvention
-    return Hocon { useConfigNamingConvention = ucnc }
-        .decodeFromConfig(deserializer, ConfigFactory.parseString(configString))
+    val utdp = useDurationParser
+    return Hocon {
+        useConfigNamingConvention = ucnc
+        useTypesafeDurationParser = utdp
+    }.decodeFromConfig(deserializer, ConfigFactory.parseString(configString))
 }
 
 class ConfigParserObjectsTest {
