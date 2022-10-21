@@ -5,10 +5,13 @@
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
+import kotlin.time.*
 import kotlinx.serialization.*
+import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.encoding.CompositeDecoder.Companion.DECODE_DONE
+import kotlinx.serialization.hocon.internal.SuppressAnimalSniffer
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
 
@@ -128,6 +131,13 @@ public sealed class Hocon(
         private fun composeName(parentName: String, childName: String) =
             if (parentName.isEmpty()) childName else "$parentName.$childName"
 
+        @SuppressAnimalSniffer
+        private fun Config.decodeDurationInHoconFormat(path: String) : Duration = try {
+            getDuration(path).toKotlinDuration()
+        } catch (e: ConfigException) {
+            throw SerializationException(e)
+        }
+
         override fun SerialDescriptor.getTag(index: Int): String =
             composeName(currentTagOrNull.orEmpty(), getConventionElementName(index, useConfigNamingConvention))
 
@@ -138,19 +148,24 @@ public sealed class Hocon(
         }
 
         override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
-            if (deserializer !is AbstractPolymorphicSerializer<*> || useArrayPolymorphism) {
-                return deserializer.deserialize(this)
+            return when {
+                deserializer == Duration.serializer() -> {
+                    @Suppress("UNCHECKED_CAST")
+                    conf.decodeDurationInHoconFormat(currentTag) as T
+                }
+                deserializer !is AbstractPolymorphicSerializer<*> || useArrayPolymorphism -> deserializer.deserialize(this)
+                else -> {
+                    val config = if (currentTagOrNull != null) conf.getConfig(currentTag) else conf
+
+                    val reader = ConfigReader(config)
+                    val type = reader.decodeTaggedString(classDiscriminator)
+                    val actualSerializer = deserializer.findPolymorphicSerializerOrNull(reader, type)
+                        ?: throw SerializerNotFoundException(type)
+
+                    @Suppress("UNCHECKED_CAST")
+                    (actualSerializer as DeserializationStrategy<T>).deserialize(reader)
+                }
             }
-
-            val config = if (currentTagOrNull != null) conf.getConfig(currentTag) else conf
-
-            val reader = ConfigReader(config)
-            val type = reader.decodeTaggedString(classDiscriminator)
-            val actualSerializer = deserializer.findPolymorphicSerializerOrNull(reader, type)
-                ?: throw SerializerNotFoundException(type)
-
-            @Suppress("UNCHECKED_CAST")
-            return (actualSerializer as DeserializationStrategy<T>).deserialize(reader)
         }
 
         override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {

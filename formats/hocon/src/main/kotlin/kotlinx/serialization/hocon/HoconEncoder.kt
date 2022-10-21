@@ -5,7 +5,9 @@
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
+import kotlin.time.*
 import kotlinx.serialization.*
+import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.internal.*
@@ -86,12 +88,44 @@ internal class HoconConfigEncoder(hocon: Hocon, configConsumer: (ConfigValue) ->
     AbstractHoconEncoder(hocon, configConsumer) {
 
     private val configMap = mutableMapOf<String, ConfigValue>()
+    private var durationUnit: DurationUnit = DurationUnit.NANOSECONDS
 
     override fun encodeTaggedConfigValue(tag: String, value: ConfigValue) {
         configMap[tag] = value
     }
 
     override fun getCurrent(): ConfigValue = ConfigValueFactory.fromMap(configMap)
+
+    override fun elementName(descriptor: SerialDescriptor, index: Int): String {
+        descriptor.getDurationUnit(index)?.let { durationUnit = it }
+        return super.elementName(descriptor, index)
+    }
+
+    override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
+        return if (serializer == Duration.serializer()) {
+            encodeDurationInHoconFormat(value as Duration)
+        } else super.encodeSerializableValue(serializer, value)
+    }
+
+    private fun SerialDescriptor.getDurationUnit(index: Int): DurationUnit? =
+        getElementAnnotations(index).find { it is DurationUnitFormat }?.let { (it as DurationUnitFormat).value }
+
+    private fun encodeDurationInHoconFormat(value: Duration) {
+        val unitFormat = DURATION_UNITS[durationUnit] ?: throw SerializationException("No matching duration unit format found for $durationUnit")
+        encodeString("${value.toLong(durationUnit)}$unitFormat")
+    }
+
+    companion object {
+        private val DURATION_UNITS: Map<DurationUnit, String> = mapOf(
+            DurationUnit.NANOSECONDS to "ns",
+            DurationUnit.MICROSECONDS to "us",
+            DurationUnit.MILLISECONDS to "ms",
+            DurationUnit.SECONDS to "s",
+            DurationUnit.MINUTES to "m",
+            DurationUnit.HOURS to "h",
+            DurationUnit.DAYS to "d"
+        )
+    }
 }
 
 @ExperimentalSerializationApi

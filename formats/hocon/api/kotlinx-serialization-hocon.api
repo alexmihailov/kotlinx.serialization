@@ -1,3 +1,12 @@
+public abstract interface annotation class kotlinx/serialization/hocon/DurationUnitFormat : java/lang/annotation/Annotation {
+	public abstract fun value ()Lkotlin/time/DurationUnit;
+}
+
+public final class kotlinx/serialization/hocon/DurationUnitFormat$Impl : kotlinx/serialization/hocon/DurationUnitFormat {
+	public fun <init> (Lkotlin/time/DurationUnit;)V
+	public final synthetic fun value ()Lkotlin/time/DurationUnit;
+}
+
 public abstract class kotlinx/serialization/hocon/Hocon : kotlinx/serialization/SerialFormat {
 	public static final field Default Lkotlinx/serialization/hocon/Hocon$Default;
 	public synthetic fun <init> (ZZZLjava/lang/String;Lkotlinx/serialization/modules/SerializersModule;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
