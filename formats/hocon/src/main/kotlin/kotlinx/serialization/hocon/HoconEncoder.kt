@@ -10,6 +10,7 @@ import kotlinx.serialization.*
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
+import kotlinx.serialization.hocon.internal.SuppressAnimalSniffer
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
 
@@ -43,9 +44,11 @@ internal abstract class AbstractHoconEncoder(
 
     override fun shouldEncodeElementDefault(descriptor: SerialDescriptor, index: Int): Boolean = hocon.encodeDefaults
 
+    @SuppressAnimalSniffer
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
         when {
             serializer.descriptor == Duration.serializer().descriptor -> encodeDuration(value as Duration)
+            serializer.descriptor == JDurationSerializer.descriptor -> encodeDuration((value as java.time.Duration).toKotlinDuration())
             serializer !is AbstractPolymorphicSerializer<*> || hocon.useArrayPolymorphism -> serializer.serialize(this, value)
             else -> {
                 @Suppress("UNCHECKED_CAST")
