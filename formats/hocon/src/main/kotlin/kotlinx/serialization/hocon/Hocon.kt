@@ -1,7 +1,7 @@
 /*
  * Copyright 2017-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license.
  */
-
+@file:Suppress("JAVA_MODULE_DOES_NOT_READ_UNNAMED_MODULE")
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
@@ -82,6 +82,9 @@ public sealed class Hocon(
 
     @SuppressAnimalSniffer
     private abstract inner class ConfigConverter<T> : TaggedDecoder<T>() {
+
+        protected var javaBean: Boolean = false
+
         override val serializersModule: SerializersModule
             get() = this@Hocon.serializersModule
 
@@ -161,8 +164,10 @@ public sealed class Hocon(
         private fun composeName(parentName: String, childName: String) =
             if (parentName.isEmpty()) childName else "$parentName.$childName"
 
-        override fun SerialDescriptor.getTag(index: Int): String =
-            composeName(currentTagOrNull.orEmpty(), getConventionElementName(index, useConfigNamingConvention))
+        override fun SerialDescriptor.getTag(index: Int): String {
+            javaBean = getHoconJavaBean(index)
+            return composeName(currentTagOrNull.orEmpty(), getConventionElementName(index, useConfigNamingConvention))
+        }
 
         override fun decodeNotNullMark(): Boolean {
             // Tag might be null for top-level deserialization
@@ -174,6 +179,11 @@ public sealed class Hocon(
             return when {
                 deserializer.descriptor == Duration.serializer().descriptor -> decodeDuration(currentTag)
                 deserializer.descriptor == JDurationSerializer.descriptor -> decodeJDuration(currentTag)
+                deserializer.descriptor.serialName.contains("kotlinx.serialization.ContextualSerializer") && javaBean -> {
+                    val clazz = requireNotNull(deserializer.descriptor.capturedKClass?.java)
+                    @Suppress("UNCHECKED_CAST")
+                    ConfigBeanFactory.create(conf.getConfig(currentTag), clazz) as T
+                }
                 deserializer !is AbstractPolymorphicSerializer<*> || useArrayPolymorphism -> deserializer.deserialize(this)
                 else -> {
                     val config = if (currentTagOrNull != null) conf.getConfig(currentTag) else conf
@@ -224,7 +234,10 @@ public sealed class Hocon(
                 else -> this
             }
 
-        override fun SerialDescriptor.getTag(index: Int) = index
+        override fun SerialDescriptor.getTag(index: Int): Int {
+            javaBean = getHoconJavaBean(index)
+            return index
+        }
 
         override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
             ind++
@@ -265,7 +278,10 @@ public sealed class Hocon(
                 else -> this
             }
 
-        override fun SerialDescriptor.getTag(index: Int) = index
+        override fun SerialDescriptor.getTag(index: Int): Int {
+            javaBean = getHoconJavaBean(index)
+            return index
+        }
 
         override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
             ind++
