@@ -1,7 +1,7 @@
 /*
  * Copyright 2017-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license.
  */
-
+@file:Suppress("JAVA_MODULE_DOES_NOT_READ_UNNAMED_MODULE")
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
@@ -12,8 +12,11 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.encoding.CompositeDecoder.Companion.DECODE_DONE
 import kotlinx.serialization.hocon.internal.SuppressAnimalSniffer
+import kotlinx.serialization.hocon.internal.isContextual
+import kotlinx.serialization.hocon.internal.isDuration
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
+import kotlin.reflect.KClass
 
 /**
  * Allows [deserialization][decodeFromConfig]
@@ -79,6 +82,7 @@ public sealed class Hocon(
     @ExperimentalSerializationApi
     public companion object Default : Hocon(false, false, false, "type", EmptySerializersModule())
 
+    @SuppressAnimalSniffer
     private abstract inner class ConfigConverter<T> : TaggedDecoder<T>() {
         override val serializersModule: SerializersModule
             get() = this@Hocon.serializersModule
@@ -101,16 +105,37 @@ public sealed class Hocon(
 
         private fun getTaggedNumber(tag: T) = validateAndCast<Number>(tag)
 
-        @SuppressAnimalSniffer
-        protected fun <E> decodeDurationInHoconFormat(tag: T): E {
+        private fun Config.decodeDuration(path: String): java.time.Duration = try {
+            getDuration(path)
+        } catch (e: ConfigException) {
+            throw SerializationException("Value at $path cannot be read as Duration because it is not a valid HOCON duration value", e)
+        }
+
+        private fun Config.decodeMemorySize(path: String): ConfigMemorySize = try {
+            getMemorySize(path)
+        } catch (e: ConfigException) {
+            throw SerializationException("Value at $path cannot be read as ConfigMemorySize because it is not a valid HOCON Size value", e)
+        }
+
+        protected fun <E> decodeDuration(tag: T): E {
             @Suppress("UNCHECKED_CAST")
-            return getValueFromTaggedConfig(tag) { conf, path ->
-                try {
-                    conf.getDuration(path).toKotlinDuration()
-                } catch (e: ConfigException) {
-                    throw SerializationException("Value at $path cannot be read as kotlin.Duration because it is not a valid HOCON duration value", e)
-                }
-            } as E
+            return getValueFromTaggedConfig(tag) { conf, path -> conf.decodeDuration(path).toKotlinDuration() } as E
+        }
+
+        protected fun <T> decodeContextual(deserializer: DeserializationStrategy<T>): T {
+            val clazz = requireNotNull(deserializer.descriptor.capturedKClass)
+            return if (serializersModule.getContextual(clazz) != null) {
+                deserializer.deserialize(this)
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                getValueFromTaggedConfig(currentTag) { conf, path ->
+                    when(clazz.qualifiedName) {
+                        java.time.Duration::class.qualifiedName -> conf.decodeDuration(path)
+                        ConfigMemorySize::class.qualifiedName -> conf.decodeMemorySize(path)
+                        else -> ConfigBeanFactory.create(conf, clazz.java)
+                    }
+                } as T
+            }
         }
 
         override fun decodeTaggedString(tag: T) = validateAndCast<String>(tag)
@@ -166,7 +191,8 @@ public sealed class Hocon(
 
         override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
             return when {
-                deserializer.descriptor == Duration.serializer().descriptor -> decodeDurationInHoconFormat(currentTag)
+                deserializer.descriptor.isDuration -> decodeDuration(currentTag)
+                deserializer.descriptor.isContextual -> decodeContextual(deserializer)
                 deserializer !is AbstractPolymorphicSerializer<*> || useArrayPolymorphism -> deserializer.deserialize(this)
                 else -> {
                     val config = if (currentTagOrNull != null) conf.getConfig(currentTag) else conf
@@ -203,8 +229,9 @@ public sealed class Hocon(
     private inner class ListConfigReader(private val list: ConfigList) : ConfigConverter<Int>() {
         private var ind = -1
 
-        override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = when (deserializer.descriptor) {
-            Duration.serializer().descriptor -> decodeDurationInHoconFormat(ind)
+        override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = when {
+            deserializer.descriptor.isDuration -> decodeDuration(ind)
+            deserializer.descriptor.isContextual -> decodeContextual(deserializer)
             else -> super.decodeSerializableValue(deserializer)
         }
 
@@ -243,8 +270,9 @@ public sealed class Hocon(
 
         private val indexSize = values.size * 2
 
-        override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = when (deserializer.descriptor) {
-            Duration.serializer().descriptor -> decodeDurationInHoconFormat(ind)
+        override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = when {
+            deserializer.descriptor.isDuration -> decodeDuration(ind)
+            deserializer.descriptor.isContextual -> decodeContextual(deserializer)
             else -> super.decodeSerializableValue(deserializer)
         }
 

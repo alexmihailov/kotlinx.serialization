@@ -1,7 +1,7 @@
 /*
  * Copyright 2017-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license.
  */
-
+@file:Suppress("JAVA_MODULE_DOES_NOT_READ_UNNAMED_MODULE")
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
@@ -10,6 +10,8 @@ import kotlinx.serialization.*
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
+import kotlinx.serialization.hocon.internal.isContextual
+import kotlinx.serialization.hocon.internal.isDuration
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
 
@@ -45,7 +47,8 @@ internal abstract class AbstractHoconEncoder(
 
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
         when {
-            serializer.descriptor == Duration.serializer().descriptor -> encodeDuration(value as Duration)
+            serializer.descriptor.isDuration -> encodeDuration(value as Duration)
+            serializer.descriptor.isContextual -> encodeContextual(serializer, value)
             serializer !is AbstractPolymorphicSerializer<*> || hocon.useArrayPolymorphism -> serializer.serialize(this, value)
             else -> {
                 @Suppress("UNCHECKED_CAST")
@@ -107,6 +110,29 @@ internal abstract class AbstractHoconEncoder(
             }
         }
         encodeString(result)
+    }
+
+    private fun encodeMemorySize(value: ConfigMemorySize) {
+        // TODO реализовать
+        encodeString(value.toString())
+    }
+
+    private fun encodeBean(value: Any) {
+        // TODO реализовать
+        encodeString(value.toString())
+    }
+
+    private fun <T> encodeContextual(serializer: SerializationStrategy<T>, value: T) {
+        val clazz = requireNotNull(serializer.descriptor.capturedKClass)
+        if (serializersModule.getContextual(clazz) != null) {
+            serializer.serialize(this, value)
+        } else {
+            when(clazz.qualifiedName) {
+                java.time.Duration::class.qualifiedName -> encodeDuration((value as java.time.Duration).toKotlinDuration())
+                ConfigMemorySize::class.qualifiedName -> encodeMemorySize(value as ConfigMemorySize)
+                else -> encodeBean(value as Any)
+            }
+        }
     }
 }
 
