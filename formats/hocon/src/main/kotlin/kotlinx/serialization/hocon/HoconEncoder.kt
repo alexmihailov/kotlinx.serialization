@@ -5,9 +5,9 @@
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
+import java.math.BigInteger
 import kotlin.time.*
 import kotlinx.serialization.*
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.hocon.internal.isContextual
@@ -113,8 +113,20 @@ internal abstract class AbstractHoconEncoder(
     }
 
     private fun encodeMemorySize(value: ConfigMemorySize) {
-        // TODO реализовать
-        encodeString(value.toString())
+        // We determine that it is divisible by 1024 (2^10).
+        // And if it is divisible, then the number itself is shifted to the right by 10.
+        // And so on until we find one that is no longer divisible by 1024.
+        // ((n & ((1 << m) - 1)) == 0)
+        val andVal = BigInteger.valueOf(1023) // ((2^10) - 1) = 0x3ff = 1023
+        var bytes = value.toBytesBigInteger()
+        var unitIndex = 0
+        while (bytes.and(andVal) == BigInteger.ZERO) { // n & 0x3ff == 0
+            if (unitIndex < MEMORY_UNIT_FORMATS.lastIndex) {
+                bytes = bytes.shiftRight(10)
+                unitIndex++
+            } else break
+        }
+        encodeString("$bytes ${MEMORY_UNIT_FORMATS[unitIndex]}")
     }
 
     private fun encodeBean(value: Any) {
@@ -193,3 +205,6 @@ internal class HoconConfigMapEncoder(hocon: Hocon, configConsumer: (ConfigValue)
     // We can't cast value in place using `(value.unwrapped() as Any?).toString()` because of warning "No cast needed".
     private fun ConfigValue.unwrappedNullable(): Any? = unwrapped()
 }
+
+// For powers of two.
+private val MEMORY_UNIT_FORMATS = listOf("byte", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB")

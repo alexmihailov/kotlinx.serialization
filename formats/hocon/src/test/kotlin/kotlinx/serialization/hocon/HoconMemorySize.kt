@@ -1,15 +1,17 @@
 package kotlinx.serialization.hocon
 
-import com.typesafe.config.ConfigMemorySize
+import com.typesafe.config.*
 import com.typesafe.config.ConfigMemorySize.ofBytes
-import java.time.Duration
-import kotlinx.serialization.Contextual
-import kotlinx.serialization.Serializable
-import org.junit.Assert
+import java.math.BigInteger
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
+import kotlinx.serialization.modules.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertFailsWith
 
 class HoconMemorySize {
 
@@ -26,7 +28,7 @@ class HoconMemorySize {
     data class ConfigMap(val mp: Map<String, @Contextual ConfigMemorySize>)
 
     @Serializable
-    data class ConfigMapDurationKey(val mp: Map<@Contextual ConfigMemorySize, @Contextual ConfigMemorySize>)
+    data class ConfigMapMemoryKey(val mp: Map<@Contextual ConfigMemorySize, @Contextual ConfigMemorySize>)
 
     @Serializable
     data class Complex(
@@ -40,6 +42,63 @@ class HoconMemorySize {
         val mp: Map<String, @Contextual ConfigMemorySize>,
         val mpp: Map<@Contextual ConfigMemorySize, @Contextual ConfigMemorySize>
     )
+
+    @Test
+    fun testSerializeMemorySize() {
+        Hocon.encodeToConfig(Simple(ofBytes(10))).assertContains("size = 10 byte")
+        Hocon.encodeToConfig(Simple(ofBytes(1000))).assertContains("size = 1000 byte")
+        val oneKib = BigInteger.valueOf(1024)
+        Hocon.encodeToConfig(Simple(ofBytes(oneKib))).assertContains("size = 1 KiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneKib + BigInteger.ONE))).assertContains("size = 1025 byte")
+        val oneMib = oneKib * oneKib
+        Hocon.encodeToConfig(Simple(ofBytes(oneMib))).assertContains("size = 1 MiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneMib + BigInteger.ONE))).assertContains("size = ${oneMib + BigInteger.ONE} byte")
+        Hocon.encodeToConfig(Simple(ofBytes(oneMib + oneKib))).assertContains("size = 1025 KiB")
+        val oneGib = oneMib * oneKib
+        Hocon.encodeToConfig(Simple(ofBytes(oneGib))).assertContains("size = 1 GiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneGib + BigInteger.ONE))).assertContains("size = ${oneGib + BigInteger.ONE} byte")
+        Hocon.encodeToConfig(Simple(ofBytes(oneGib + oneKib))).assertContains("size = ${oneMib + BigInteger.ONE} KiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneGib + oneMib))).assertContains("size = 1025 MiB")
+        val oneTib = oneGib * (oneKib)
+        Hocon.encodeToConfig(Simple(ofBytes(oneTib))).assertContains("size = 1 TiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneTib + BigInteger.ONE))).assertContains("size = ${oneTib.add(BigInteger.ONE)} byte")
+        Hocon.encodeToConfig(Simple(ofBytes(oneTib + oneKib))).assertContains("size = ${oneGib + BigInteger.ONE} KiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneTib + oneMib))).assertContains("size = ${oneMib + BigInteger.ONE} MiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneTib + oneGib))).assertContains("size = 1025 GiB")
+        val onePib = oneTib * oneKib
+        Hocon.encodeToConfig(Simple(ofBytes(onePib))).assertContains("size = 1 PiB")
+        Hocon.encodeToConfig(Simple(ofBytes(onePib + BigInteger.ONE))).assertContains("size = ${onePib + BigInteger.ONE} byte")
+        val oneEib = onePib * oneKib
+        Hocon.encodeToConfig(Simple(ofBytes(oneEib))).assertContains("size = 1 EiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneEib + BigInteger.ONE))).assertContains("size = ${oneEib + BigInteger.ONE} byte")
+        val oneZib = oneEib * oneKib
+        Hocon.encodeToConfig(Simple(ofBytes(oneZib))).assertContains("size = 1 ZiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneZib + BigInteger.ONE))).assertContains("size = ${oneZib + BigInteger.ONE} byte")
+        val oneYib = oneZib * oneKib
+        Hocon.encodeToConfig(Simple(ofBytes(oneYib))).assertContains("size = 1 YiB")
+        Hocon.encodeToConfig(Simple(ofBytes(oneYib + BigInteger.ONE))).assertContains("size = ${oneYib + BigInteger.ONE} byte")
+        Hocon.encodeToConfig(Simple(ofBytes(oneYib * oneKib))).assertContains("size = $oneKib YiB")
+    }
+
+    @Test
+    fun testSerializeNullableMemorySize() {
+        Hocon.encodeToConfig(Nullable(null)).assertContains("size = null")
+        Hocon.encodeToConfig(Nullable(ofBytes(1024 * 6))).assertContains("size = 6 KiB")
+    }
+
+    @Test
+    fun testSerializeListOfMemorySize() {
+        Hocon.encodeToConfig(ConfigList(listOf(ofBytes(1), ofBytes(1024 * 1024), ofBytes(1024))))
+            .assertContains("l: [ 1 byte, 1 MiB, 1 KiB ]")
+    }
+
+    @Test
+    fun testSerializeMapOfMemorySize() {
+        Hocon.encodeToConfig(ConfigMap(mapOf("one" to ofBytes(2000), "two" to ofBytes(1024 * 1024 * 1024))))
+            .assertContains("mp: { one = 2000 byte, two = 1 GiB }")
+        Hocon.encodeToConfig(ConfigMapMemoryKey((mapOf(ofBytes(1024) to ofBytes(1024)))))
+            .assertContains("mp: { 1 KiB = 1 KiB }")
+    }
 
     @Test
     fun testDeserializeMemorySize() {
@@ -74,7 +133,7 @@ class HoconMemorySize {
 
         val objDurationKey = deserializeConfig("""
              mp: { 1024b = 1Ki }
-        """.trimIndent(),ConfigMapDurationKey.serializer())
+        """.trimIndent(), ConfigMapMemoryKey.serializer())
         assertEquals(mapOf(ofBytes(1024) to ofBytes(1024)), objDurationKey.mp)
     }
 
@@ -100,5 +159,21 @@ class HoconMemorySize {
         assertEquals(listOf(ofBytes(1000), ofBytes(1048576)), obj.ld)
         assertEquals(mapOf("one" to ofBytes(2000), "two" to ofBytes(5_000_000)), obj.mp)
         assertEquals(mapOf(ofBytes(1024) to ofBytes(1024)), obj.mpp)
+    }
+
+    @Test
+    fun testUseCustomContextual() {
+        val serializer = object : KSerializer<ConfigMemorySize> {
+            override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("test", PrimitiveKind.STRING)
+            override fun deserialize(decoder: Decoder): ConfigMemorySize = throw UnsupportedOperationException("Custom deserialize")
+            override fun serialize(encoder: Encoder, value: ConfigMemorySize) = throw UnsupportedOperationException("Custom serialize")
+        }
+        val hocon = Hocon { serializersModule = SerializersModule { contextual(ConfigMemorySize::class, serializer) } }
+        assertFailsWith<UnsupportedOperationException>("Custom deserialize") {
+            hocon.decodeFromConfig<Simple>( ConfigFactory.parseString("size = 10 byte"))
+        }
+        assertFailsWith<UnsupportedOperationException>("Custom serialize") {
+            hocon.encodeToConfig(Simple(ofBytes(25)))
+        }
     }
 }
