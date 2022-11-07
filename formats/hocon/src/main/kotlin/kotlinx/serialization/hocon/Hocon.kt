@@ -132,7 +132,7 @@ public sealed class Hocon(
                     when(clazz.qualifiedName) {
                         java.time.Duration::class.qualifiedName -> conf.decodeDuration(path)
                         ConfigMemorySize::class.qualifiedName -> conf.decodeMemorySize(path)
-                        else -> ConfigBeanFactory.create(conf, clazz.java)
+                        else -> ConfigBeanFactory.create(conf.getConfig(path), clazz.java)
                     }
                 } as T
             }
