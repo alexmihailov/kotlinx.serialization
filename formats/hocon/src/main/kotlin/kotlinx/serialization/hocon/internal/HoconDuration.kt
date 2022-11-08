@@ -1,11 +1,24 @@
 @file:Suppress("JAVA_MODULE_DOES_NOT_READ_UNNAMED_MODULE")
 package kotlinx.serialization.hocon.internal
 
-import com.typesafe.config.Config
-import com.typesafe.config.ConfigException
-import kotlinx.serialization.SerializationException
+import com.typesafe.config.*
+import kotlinx.serialization.*
 import kotlin.time.Duration
+import java.time.Duration as JDuration
 
+/**
+ * Encode [Duration] objects using time unit short names: d, h, m, s, ms, us, ns.
+ * Example:
+ *     120.seconds -> 2 m
+ *     121.seconds -> 121 s
+ *     120.minutes -> 2 h
+ *     122.minutes -> 122 m
+ *     24.hours -> 1 d
+ * Encoding use the largest time unit.
+ * All restrictions on the maximum and minimum duration are specified in [Duration].
+ * @param value [Duration]
+ * @return encoded value
+ */
 internal fun encodeDuration(value: Duration): String = value.toComponents { seconds, nanoseconds ->
     when {
         nanoseconds == 0 -> {
@@ -29,7 +42,15 @@ internal fun encodeDuration(value: Duration): String = value.toComponents { seco
     }
 }
 
-internal fun Config.decodeDuration(path: String): java.time.Duration = try {
+/**
+ * Decode [JDuration] from [Config].
+ * See https://github.com/lightbend/config/blob/main/HOCON.md#duration-format
+ *
+ * @receiver [Config]
+ * @param path in config
+ * @return [JDuration]
+ */
+internal fun Config.decodeDuration(path: String): JDuration = try {
     getDuration(path)
 } catch (e: ConfigException) {
     throw SerializationException("Value at $path cannot be read as Duration because it is not a valid HOCON duration value", e)

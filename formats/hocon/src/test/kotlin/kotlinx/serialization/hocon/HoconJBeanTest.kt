@@ -1,13 +1,10 @@
 package kotlinx.serialization.hocon
 
-import com.typesafe.config.ConfigFactory
 import kotlinx.serialization.*
-import kotlinx.serialization.descriptors.*
-import kotlinx.serialization.encoding.*
+import kotlinx.serialization.hocon.serializers.JBeanSerializer.Companion.jBeanSerializer
 import kotlinx.serialization.modules.*
 import org.junit.Assert.*
 import org.junit.Test
-import kotlin.test.assertFailsWith
 
 class HoconJBeanTest {
 
@@ -43,23 +40,28 @@ class HoconJBeanTest {
         age = 27
     }
 
+    private inline fun <reified T> deserializeJBeanConfig(
+        configString: String,
+        deserializer: DeserializationStrategy<T>,
+    ): T = deserializeConfig(configString, deserializer, false, serializersModuleOf(jBeanSerializer<TestJavaBean>()))
+
     @Test
     fun testDeserializeJBean() {
-        val obj = deserializeConfig(strConfig, TestData.serializer())
+        val obj = deserializeJBeanConfig(strConfig, TestData.serializer())
         assertEquals(TestData(bean), obj)
     }
 
     @Test
     fun testDeserializeNullableJBean() {
-        var obj = deserializeConfig("d: null", TestNullableData.serializer())
+        var obj = deserializeJBeanConfig("d: null", TestNullableData.serializer())
         assertNull(obj.d)
-        obj = deserializeConfig(strConfig, TestNullableData.serializer())
+        obj = deserializeJBeanConfig(strConfig, TestNullableData.serializer())
         assertEquals(TestNullableData(bean), obj)
     }
 
     @Test
     fun testDeserializeListOfJBean() {
-        val obj = deserializeConfig("""
+        val obj = deserializeJBeanConfig("""
             ld: [
                 { name = Alex, age = 27 },
                 { name = Alex, age = 27 }
@@ -70,7 +72,7 @@ class HoconJBeanTest {
 
     @Test
     fun testDeserializeMapOfJBean() {
-        val obj = deserializeConfig("""
+        val obj = deserializeJBeanConfig("""
             mp: { first = { name = Alex, age = 27 }, second = { name = Alex, age = 27 } }
         """.trimIndent(), ConfigMap.serializer())
         assertEquals(mapOf("first" to bean, "second" to bean), obj.mp)
@@ -78,7 +80,7 @@ class HoconJBeanTest {
 
     @Test
     fun testDeserializeComplexJBean() {
-        val obj = deserializeConfig("""
+        val obj = deserializeJBeanConfig("""
             i = 6
             s: { d: { name = Alex, age = 27 } }
             n: { d: null }
@@ -95,22 +97,5 @@ class HoconJBeanTest {
         assertTrue(obj.f)
         assertEquals(listOf(bean, bean), obj.ld)
         assertEquals(mapOf("first" to bean), obj.mp)
-    }
-
-    @Test
-    fun testUseCustomContextual() {
-        val serializer = object : KSerializer<TestJavaBean> {
-            override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("test", PrimitiveKind.STRING)
-            override fun deserialize(decoder: Decoder): TestJavaBean = throw UnsupportedOperationException("Custom deserialize")
-            override fun serialize(encoder: Encoder, value: TestJavaBean) = throw UnsupportedOperationException("Custom serialize")
-        }
-        val hocon = Hocon { serializersModule = SerializersModule { contextual(TestJavaBean::class, serializer) } }
-        assertFailsWith<UnsupportedOperationException>("Custom deserialize") {
-            hocon.decodeFromConfig<TestData>( ConfigFactory.parseString("d: { name = Alex, age = 27 }"))
-        }
-        // TODO на сериализацией надо подумать!
-        assertFailsWith<UnsupportedOperationException>("Custom serialize") {
-            hocon.encodeToConfig(TestData(bean))
-        }
     }
 }

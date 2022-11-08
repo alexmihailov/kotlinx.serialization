@@ -12,6 +12,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.encoding.CompositeDecoder.Companion.DECODE_DONE
 import kotlinx.serialization.hocon.internal.*
+import kotlinx.serialization.hocon.internal.SuppressAnimalSniffer
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
 
@@ -132,9 +133,10 @@ public sealed class Hocon(
             return enumDescriptor.getElementIndexOrThrow(s)
         }
 
-        internal fun getCurrentTag(): T { // TODO подумать
-            return currentTag
-        }
+        /**
+         * Allow access to [currentTag] in serializers.
+         */
+        internal fun getCurrentTag(): T = currentTag
     }
 
     internal inner class ConfigReader(val conf: Config) : ConfigConverter<String>() {

@@ -7,22 +7,35 @@ import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.hocon.Hocon
+import kotlinx.serialization.hocon.UnsupportedFormatException
 
+/**
+ * Serializer for [ConfigMemorySize].
+ * For decode using [HOCON Size in bytes format](https://github.com/lightbend/config/blob/main/HOCON.md#size-in-bytes-format).
+ * For encode used format for powers of two: byte, KiB, MiB, GiB, TiB, PiB, EiB, ZiB, YiB.
+ * Encoding use the largest value of format.
+ * Example:
+ *  1024 byte -> 1 KiB
+ *  1024 KiB -> 1 MiB
+ *  1025 KiB -> 1025 KiB
+ */
 @ExperimentalSerializationApi
 object ConfigMemorySizeSerializer : KSerializer<ConfigMemorySize> {
 
     // For powers of two.
     private val memoryUnitFormats = listOf("byte", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB")
 
+    private val valueResolver: (Config, String) -> ConfigMemorySize = { conf, path -> conf.decodeMemorySize(path) }
+
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("hocon.com.typesafe.config.ConfigMemorySize", PrimitiveKind.STRING)
 
     override fun deserialize(decoder: Decoder): ConfigMemorySize {
         return when (decoder) {
-            is Hocon.ConfigReader -> decoder.getValueFromTaggedConfig(decoder.getCurrentTag()) { conf, path -> conf.decodeMemorySize(path) }
-            is Hocon.ListConfigReader -> decoder.getValueFromTaggedConfig(decoder.getCurrentTag()) { conf, path -> conf.decodeMemorySize(path) }
-            is Hocon.MapConfigReader -> decoder.getValueFromTaggedConfig(decoder.getCurrentTag()) { conf, path -> conf.decodeMemorySize(path) }
-            else -> throw SerializationException() // TODO message
+            is Hocon.ConfigReader -> decoder.getValueFromTaggedConfig(decoder.getCurrentTag(), valueResolver)
+            is Hocon.ListConfigReader -> decoder.getValueFromTaggedConfig(decoder.getCurrentTag(), valueResolver)
+            is Hocon.MapConfigReader -> decoder.getValueFromTaggedConfig(decoder.getCurrentTag(), valueResolver)
+            else -> throw UnsupportedFormatException("ConfigMemorySizeSerializer")
         }
     }
 
