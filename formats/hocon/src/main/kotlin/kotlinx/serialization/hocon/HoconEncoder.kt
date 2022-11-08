@@ -5,13 +5,11 @@
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
-import java.math.BigInteger
 import kotlin.time.*
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
-import kotlinx.serialization.hocon.internal.isContextual
-import kotlinx.serialization.hocon.internal.isDuration
+import kotlinx.serialization.hocon.internal.*
 import kotlinx.serialization.internal.*
 import kotlinx.serialization.modules.*
 
@@ -47,8 +45,7 @@ internal abstract class AbstractHoconEncoder(
 
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
         when {
-            serializer.descriptor.isDuration -> encodeDuration(value as Duration)
-            serializer.descriptor.isContextual -> encodeContextual(serializer, value)
+            serializer.descriptor.isDuration -> encodeString(encodeDuration(value as Duration))
             serializer !is AbstractPolymorphicSerializer<*> || hocon.useArrayPolymorphism -> serializer.serialize(this, value)
             else -> {
                 @Suppress("UNCHECKED_CAST")
@@ -85,67 +82,6 @@ internal abstract class AbstractHoconEncoder(
     }
 
     private fun configValueOf(value: Any?) = ConfigValueFactory.fromAnyRef(value)
-
-    private fun encodeDuration(value: Duration) {
-        val result = value.toComponents { seconds, nanoseconds ->
-            when {
-                nanoseconds == 0 -> {
-                    if (seconds % 60 == 0L) { // minutes
-                        if (seconds % 3600 == 0L) { // hours
-                            if (seconds % 86400 == 0L) { // days
-                                "${seconds / 86400} d"
-                            } else {
-                                "${seconds / 3600} h"
-                            }
-                        } else {
-                            "${seconds / 60} m"
-                        }
-                    } else {
-                        "$seconds s"
-                    }
-                }
-                nanoseconds % 1_000_000 == 0 -> "${seconds * 1_000 + nanoseconds / 1_000_000} ms"
-                nanoseconds % 1_000 == 0 -> "${seconds * 1_000_000 + nanoseconds / 1_000} us"
-                else -> "${value.inWholeNanoseconds} ns"
-            }
-        }
-        encodeString(result)
-    }
-
-    private fun encodeMemorySize(value: ConfigMemorySize) {
-        // We determine that it is divisible by 1024 (2^10).
-        // And if it is divisible, then the number itself is shifted to the right by 10.
-        // And so on until we find one that is no longer divisible by 1024.
-        // ((n & ((1 << m) - 1)) == 0)
-        val andVal = BigInteger.valueOf(1023) // ((2^10) - 1) = 0x3ff = 1023
-        var bytes = value.toBytesBigInteger()
-        var unitIndex = 0
-        while (bytes.and(andVal) == BigInteger.ZERO) { // n & 0x3ff == 0
-            if (unitIndex < MEMORY_UNIT_FORMATS.lastIndex) {
-                bytes = bytes.shiftRight(10)
-                unitIndex++
-            } else break
-        }
-        encodeString("$bytes ${MEMORY_UNIT_FORMATS[unitIndex]}")
-    }
-
-    private fun encodeBean(value: Any) {
-        // TODO реализовать
-        encodeString(value.toString())
-    }
-
-    private fun <T> encodeContextual(serializer: SerializationStrategy<T>, value: T) {
-        val clazz = requireNotNull(serializer.descriptor.capturedKClass)
-        if (serializersModule.getContextual(clazz) != null) {
-            serializer.serialize(this, value)
-        } else {
-            when(clazz.qualifiedName) {
-                java.time.Duration::class.qualifiedName -> encodeDuration((value as java.time.Duration).toKotlinDuration())
-                ConfigMemorySize::class.qualifiedName -> encodeMemorySize(value as ConfigMemorySize)
-                else -> encodeBean(value as Any)
-            }
-        }
-    }
 }
 
 @ExperimentalSerializationApi
@@ -205,6 +141,3 @@ internal class HoconConfigMapEncoder(hocon: Hocon, configConsumer: (ConfigValue)
     // We can't cast value in place using `(value.unwrapped() as Any?).toString()` because of warning "No cast needed".
     private fun ConfigValue.unwrappedNullable(): Any? = unwrapped()
 }
-
-// For powers of two.
-private val MEMORY_UNIT_FORMATS = listOf("byte", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB")

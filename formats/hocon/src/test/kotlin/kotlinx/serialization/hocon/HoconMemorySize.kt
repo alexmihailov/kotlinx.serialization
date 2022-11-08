@@ -1,3 +1,4 @@
+@file:UseSerializers(ConfigMemorySizeSerializer::class)
 package kotlinx.serialization.hocon
 
 import com.typesafe.config.*
@@ -6,29 +7,27 @@ import java.math.BigInteger
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
+import kotlinx.serialization.hocon.serializers.ConfigMemorySizeSerializer
 import kotlinx.serialization.modules.*
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
 import org.junit.Test
-import kotlin.test.assertFailsWith
 
 class HoconMemorySize {
 
     @Serializable
-    data class Simple(@Contextual val size: ConfigMemorySize)
+    data class Simple(val size: ConfigMemorySize)
 
     @Serializable
-    data class Nullable(@Contextual val size: ConfigMemorySize?)
+    data class Nullable(val size: ConfigMemorySize?)
 
     @Serializable
-    data class ConfigList(val l: List<@Contextual ConfigMemorySize>)
+    data class ConfigList(val l: List<ConfigMemorySize>)
 
     @Serializable
-    data class ConfigMap(val mp: Map<String, @Contextual ConfigMemorySize>)
+    data class ConfigMap(val mp: Map<String, ConfigMemorySize>)
 
     @Serializable
-    data class ConfigMapMemoryKey(val mp: Map<@Contextual ConfigMemorySize, @Contextual ConfigMemorySize>)
+    data class ConfigMapMemoryKey(val mp: Map<ConfigMemorySize, ConfigMemorySize>)
 
     @Serializable
     data class Complex(
@@ -38,9 +37,9 @@ class HoconMemorySize {
         val l: List<Simple>,
         val ln: List<Nullable>,
         val f: Boolean,
-        val ld: List<@Contextual ConfigMemorySize>,
-        val mp: Map<String, @Contextual ConfigMemorySize>,
-        val mpp: Map<@Contextual ConfigMemorySize, @Contextual ConfigMemorySize>
+        val ld: List<ConfigMemorySize>,
+        val mp: Map<String, ConfigMemorySize>,
+        val mpp: Map<ConfigMemorySize, ConfigMemorySize>
     )
 
     @Test
@@ -159,21 +158,5 @@ class HoconMemorySize {
         assertEquals(listOf(ofBytes(1000), ofBytes(1048576)), obj.ld)
         assertEquals(mapOf("one" to ofBytes(2000), "two" to ofBytes(5_000_000)), obj.mp)
         assertEquals(mapOf(ofBytes(1024) to ofBytes(1024)), obj.mpp)
-    }
-
-    @Test
-    fun testUseCustomContextual() {
-        val serializer = object : KSerializer<ConfigMemorySize> {
-            override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("test", PrimitiveKind.STRING)
-            override fun deserialize(decoder: Decoder): ConfigMemorySize = throw UnsupportedOperationException("Custom deserialize")
-            override fun serialize(encoder: Encoder, value: ConfigMemorySize) = throw UnsupportedOperationException("Custom serialize")
-        }
-        val hocon = Hocon { serializersModule = SerializersModule { contextual(ConfigMemorySize::class, serializer) } }
-        assertFailsWith<UnsupportedOperationException>("Custom deserialize") {
-            hocon.decodeFromConfig<Simple>( ConfigFactory.parseString("size = 10 byte"))
-        }
-        assertFailsWith<UnsupportedOperationException>("Custom serialize") {
-            hocon.encodeToConfig(Simple(ofBytes(25)))
-        }
     }
 }

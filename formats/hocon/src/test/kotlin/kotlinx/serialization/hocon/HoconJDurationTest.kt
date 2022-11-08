@@ -1,37 +1,31 @@
+@file:UseSerializers(JDurationSerializer::class)
 package kotlinx.serialization.hocon
 
-import com.typesafe.config.ConfigFactory
 import java.time.Duration
 import java.time.Duration.*
 import kotlin.test.assertFailsWith
 import kotlinx.serialization.*
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.hocon.serializers.JDurationSerializer
 import org.junit.*
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
+
 
 class HoconJDurationTest {
 
     @Serializable
-    data class Simple(val d: @Contextual Duration)
+    data class Simple(val d: Duration)
 
     @Serializable
-    data class Nullable(val d: @Contextual Duration?)
+    data class Nullable(val d: Duration?)
 
     @Serializable
-    data class ConfigList(val ld: List<@Contextual Duration>)
+    data class ConfigList(val ld: List<Duration>)
 
     @Serializable
-    data class ConfigMap(val mp: Map<String, @Contextual Duration>)
+    data class ConfigMap(val mp: Map<String, Duration>)
 
     @Serializable
-    data class ConfigMapDurationKey(val mp: Map<@Contextual Duration, @Contextual Duration>)
+    data class ConfigMapDurationKey(val mp: Map<Duration, Duration>)
 
     @Serializable
     data class Complex(
@@ -190,22 +184,6 @@ class HoconJDurationTest {
         val message = "Value at d cannot be read as Duration because it is not a valid HOCON duration value"
         assertFailsWith<SerializationException>(message) {
             deserializeConfig("d = 10 unknown", Simple.serializer())
-        }
-    }
-
-    @Test
-    fun testUseCustomContextual() {
-        val serializer = object : KSerializer<Duration> {
-            override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("test", PrimitiveKind.STRING)
-            override fun deserialize(decoder: Decoder): Duration = throw UnsupportedOperationException("Custom deserialize")
-            override fun serialize(encoder: Encoder, value: Duration) = throw UnsupportedOperationException("Custom serialize")
-        }
-        val hocon = Hocon { serializersModule = SerializersModule { contextual(Duration::class, serializer) } }
-        assertFailsWith<UnsupportedOperationException>("Custom deserialize") {
-            hocon.decodeFromConfig<Simple>( ConfigFactory.parseString("d = 10s"))
-        }
-        assertFailsWith<UnsupportedOperationException>("Custom serialize") {
-            hocon.encodeToConfig(Simple(ofHours(5)))
         }
     }
 }
