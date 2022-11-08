@@ -35,6 +35,13 @@ import kotlinx.serialization.modules.*
  *      24.hours -> 1 d
  * All restrictions on the maximum and minimum duration are specified in [Duration].
  *
+ * [Hocon] support encode/decode: [java.time.Duration], [ConfigMemorySize].
+ * @see kotlinx.serialization.hocon.serializers.JDurationSerializer
+ * @see kotlinx.serialization.hocon.serializers.ConfigMemorySizeSerializer
+ *
+ * [Hocon] support decode java objects in Java Bean notation.
+ * @see kotlinx.serialization.hocon.serializers.JBeanSerializer
+ *
  * @param [useConfigNamingConvention] switches naming resolution to config naming convention (hyphen separated).
  * @param serializersModule A [SerializersModule] which should contain registered serializers
  * for [Contextual] and [Polymorphic] serialization, if you have any.

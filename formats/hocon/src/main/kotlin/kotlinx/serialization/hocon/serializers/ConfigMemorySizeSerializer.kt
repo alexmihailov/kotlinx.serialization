@@ -18,6 +18,17 @@ import kotlinx.serialization.hocon.UnsupportedFormatException
  *  1024 byte -> 1 KiB
  *  1024 KiB -> 1 MiB
  *  1025 KiB -> 1025 KiB
+ * Usage example:
+ * ```
+ * @Serializable
+ * data class ConfigMemory(
+ *      @Serializable(ConfigMemorySizeSerializer::class)
+ *      val size: ConfigMemorySize
+ * )
+ * val config = ConfigFactory.parseString("size = 1 MiB")
+ * val configMemory = Hocon.decodeFromConfig(ConfigMemory.serializer(), config)
+ * val newConfig = Hocon.encodeToConfig(ConfigMemory.serializer(), configMemory)
+ * ```
  */
 @ExperimentalSerializationApi
 object ConfigMemorySizeSerializer : KSerializer<ConfigMemorySize> {

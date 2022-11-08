@@ -26,6 +26,17 @@ import kotlin.time.*
  *      24.hours -> 1 d
  * When encoding, there is a conversion to [Duration].
  * All restrictions on the maximum and minimum duration are specified in [Duration].
+ * Usage example:
+ * ```
+ * @Serializable
+ * data class ExampleDuration(
+ *  @Serializable(JDurationSerializer::class)
+ *   val duration: java.time.Duration
+ * )
+ * val config = ConfigFactory.parseString("duration = 1 day")
+ * val exampleDuration = Hocon.decodeFromConfig(ExampleDuration.serializer(), config)
+ * val newConfig = Hocon.encodeToConfig(ExampleDuration.serializer(), exampleDuration)
+ * ```
  */
 @ExperimentalSerializationApi
 object JDurationSerializer : KSerializer<JDuration> {
